@@ -7,7 +7,7 @@ The board is equiped with USB, BlueTooth, IMU (accelerometer, gyroscope, magneto
 
 ### Accelerometer
 The accelerometer on board is [LSM9DS1](https://content.arduino.cc/assets/Nano_BLE_Sense_lsm9ds1.pdf).
-It is programmed using the [Arduino LSM6DS3 Library](https://www.arduino.cc/en/Reference/ArduinoLSM6DS3)
+It is programmed using the [Arduino LSM9DS1 Library](https://www.arduino.cc/en/Reference/ArduinoLSM9DS1)
 
 > TRICKY: The coordinate system of the sensor's magnetometer is misaligned with the accel and gyro.
 
