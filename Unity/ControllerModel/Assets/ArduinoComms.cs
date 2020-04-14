@@ -6,13 +6,31 @@ public class ArduinoComms : MonoBehaviour
     SerialPort port;
 
     [SerializeField]
-    Transform accelerometer;
+    Transform upTransform;
 
     [SerializeField]
-    Transform magentometer;
+    Transform northTransform;
 
     [SerializeField]
-    Transform controller;
+    Transform eastTransform;
+
+    [SerializeField]
+    Transform accelMagneController;
+
+    [SerializeField]
+    Transform gytoController;
+
+    [SerializeField]
+    Transform fusedController;
+
+    [SerializeField]
+    Vector3 offset = Vector3.zero;
+
+    [SerializeField]
+    Quaternion gameAreaOrientation = Quaternion.identity;
+
+    [SerializeField]
+    float driftCompensationRatio = 0.02f;
 
     private float minMagneX = +1000;
     private float maxMagneX = -1000;
@@ -23,8 +41,13 @@ public class ArduinoComms : MonoBehaviour
     private float minMagneZ = +1000;
     private float maxMagneZ = -1000;
 
-    Vector3 magnetometerVector;
-    Vector3 accelerometerVector;
+    private Vector3 magnetometerCalibrated;
+
+    private Vector3 east;
+    private Vector3 north;
+    private Vector3 up;
+
+    float lastGyroReadTime = float.NaN;
 
     void Start()
     {
@@ -39,8 +62,6 @@ public class ArduinoComms : MonoBehaviour
         port.Open();
     }
 
-    float lastGyroReadTime = float.NaN;
-
     void Update()
     {
         try
@@ -53,44 +74,14 @@ public class ArduinoComms : MonoBehaviour
                 {
                     var tokens = line.Split(' ');
                     var time = float.Parse(tokens[1].Substring(0, tokens[1].Length - 2)) / 1000f;
-                    var sensorX = float.Parse(tokens[2]);
-                    var sensorY = float.Parse(tokens[3]);
-                    var senzorZ = float.Parse(tokens[4]);
 
-                    // Magnetometer calibration...
-                    minMagneX = Mathf.Min(minMagneX, sensorX);
-                    maxMagneX = Mathf.Max(maxMagneX, sensorX);
+                    var x = float.Parse(tokens[2]);
+                    var y = float.Parse(tokens[3]);
+                    var z = float.Parse(tokens[4]);
 
-                    minMagneY = Mathf.Min(minMagneY, sensorY);
-                    maxMagneY = Mathf.Max(maxMagneY, sensorY);
-
-                    minMagneZ = Mathf.Min(minMagneZ, senzorZ);
-                    maxMagneZ = Mathf.Max(maxMagneZ, senzorZ);
-
-                    var offsetX = (maxMagneX + minMagneX) / 2;
-                    var offsetY = (maxMagneY + minMagneY) / 2;
-                    var offsetZ = (maxMagneZ + minMagneZ) / 2;
-
-                    var averageDeltaX = (maxMagneX - minMagneX) / 2f;
-                    var averageDeltaY = (maxMagneY - minMagneY) / 2f;
-                    var averageDeltaZ = (maxMagneZ - minMagneZ) / 2f;
-
-                    var averageOffset = (averageDeltaX + averageDeltaY + averageDeltaZ) / 3f;
-                    var scaleX = averageOffset / averageDeltaX;
-                    var scaleY = averageOffset / averageDeltaY;
-                    var scaleZ = averageOffset / averageDeltaZ;
-
-                    var calibratedX = (sensorX - offsetX) * scaleX;
-                    var calibratedY = (sensorY - offsetY) * scaleY;
-                    var calibratedZ = (senzorZ - offsetZ) * scaleZ;
-
-                    var unityX = calibratedX;
-                    var unityY = calibratedZ;
-                    var unityZ = calibratedY;
-
-                    this.magnetometerVector = new Vector3(unityX, unityY, unityZ);
-                    if (!float.IsNaN(magnetometerVector.x) && !float.IsNaN(magnetometerVector.y) && !float.IsNaN(magnetometerVector.z))
-                    this.magentometer.position = this.magnetometerVector * 0.003f;
+                    this.magnetometerCalibrated = new Vector3(-y, z, x) + offset;
+                    this.north = Vector3.ProjectOnPlane(this.magnetometerCalibrated, this.up);
+                    this.northTransform.position = this.north.normalized * 0.35f;
                 }
 
                 if (line.StartsWith("ACCEL: "))
@@ -100,13 +91,8 @@ public class ArduinoComms : MonoBehaviour
                     var x = float.Parse(tokens[2]);
                     var y = float.Parse(tokens[3]);
                     var z = float.Parse(tokens[4]);
-
-                    var unityX = y;
-                    var unityY = z;
-                    var unityZ = x;
-
-                    this.accelerometerVector = new Vector3(unityX, unityY, unityZ);
-                    this.accelerometer.position = accelerometerVector * 0.2f;
+                    this.up = new Vector3(-y, z, -x);
+                    this.upTransform.position = this.up.normalized * 0.35f;
                 }
 
                 if (line.StartsWith("GYRO: "))
@@ -122,16 +108,24 @@ public class ArduinoComms : MonoBehaviour
                     var delta = (time - lastGyroReadTime) / 1000000f;
                     if (!float.IsNaN(this.lastGyroReadTime))
                     {
-                        this.controller.rotation *= Quaternion.Euler(y * delta, -z * delta, x * delta);
+                        this.gytoController.rotation *= Quaternion.Euler(y * delta, -z * delta, x * delta);
+                        this.fusedController.rotation *= Quaternion.Euler(y * delta, -z * delta, x * delta);
                     }
                     this.lastGyroReadTime = time;
                 }
-
-                // TODO: Use the acceleromater and magnetometer to compensate gyro drift.
             }
         }
         catch (System.Exception)
         {
         }
+
+        // TODO: Use the acceleromater and magnetometer to compensate gyro drift.
+        this.east = Vector3.Cross(this.up, this.north);
+        eastTransform.position = east.normalized * 0.35f;
+
+        var accelMagneRotation = Quaternion.Inverse(Quaternion.LookRotation(this.east, this.up));
+        this.accelMagneController.rotation = accelMagneRotation;
+
+        this.fusedController.rotation = Quaternion.Lerp(this.fusedController.rotation, gameAreaOrientation * accelMagneRotation, this.driftCompensationRatio);
     }
 }
